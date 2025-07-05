@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#667eea" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Boss Babe Inventory" />
     <title>✨ Boss Babe Inventory ✨</title>
@@ -747,6 +747,29 @@
                         💡 <strong>Pro tip:</strong> Just paste and press Enter for instant auto-sale!
                     </p>
                 </div>
+                
+                <!-- Real-time Barcode Scanner -->
+                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 10px; border: 1px solid #ffeaa7;">
+                    <h4 style="margin-bottom: 10px; color: #333;">
+                        <i class="fas fa-bolt"></i> Real-time Scanner
+                    </h4>
+                    <p style="font-size: 0.9rem; color: #666; margin-bottom: 10px;">
+                        <strong>Automatic scanning:</strong> Focus on this box and scan with a USB barcode scanner:
+                    </p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="realtimeBarcodeInput" placeholder="Scan barcode here..." 
+                               style="flex: 1; padding: 12px; border: 2px solid #ffeaa7; border-radius: 8px; font-size: 1rem; background: #fff;"
+                               onkeypress="if(event.key==='Enter') processRealtimeBarcode()"
+                               autofocus>
+                        <button class="btn btn-warning btn-small" onclick="focusRealtimeScanner()" style="padding: 12px 15px;">
+                            <i class="fas fa-crosshairs"></i>
+                            Focus
+                        </button>
+                    </div>
+                    <p style="font-size: 0.8rem; color: #666; margin-top: 8px;">
+                        🔥 <strong>How to:</strong> Click "Focus", scan barcode with USB scanner, press Enter
+                    </p>
+                </div>
             </div>
         </div>
     </div>
@@ -822,19 +845,39 @@ document.addEventListener('DOMContentLoaded', function() {
     updateStats();
     checkAlerts();
     
-    // Register service worker for PWA
+    // Register service worker for PWA (only if sw.js exists)
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-            .then(registration => console.log('ServiceWorker registered'))
-            .catch(err => console.log('ServiceWorker registration failed'));
+        // Check if service worker file exists before registering
+        fetch('/sw.js')
+            .then(response => {
+                if (response.ok) {
+                    return navigator.serviceWorker.register('/sw.js');
+                } else {
+                    console.log('ServiceWorker file not found, skipping registration');
+                }
+            })
+            .then(registration => {
+                if (registration) {
+                    console.log('ServiceWorker registered successfully');
+                }
+            })
+            .catch(err => {
+                console.log('ServiceWorker registration skipped (file not found)');
+            });
     }
     
-    // Check if QRCode library is loaded
+    // Check if barcode libraries are loaded
     setTimeout(() => {
-        if (typeof QRCode !== 'undefined') {
-            console.log('✅ QRCode library loaded successfully');
+        if (typeof JsBarcode !== 'undefined') {
+            console.log('✅ JsBarcode library loaded successfully');
         } else {
-            console.error('❌ QRCode library not loaded');
+            console.log('⚠️ JsBarcode library not loaded (barcode generation may not work)');
+        }
+        
+        if (typeof Html5QrcodeScanner !== 'undefined') {
+            console.log('✅ HTML5 QR Code Scanner library loaded successfully');
+        } else {
+            console.log('⚠️ HTML5 QR Code Scanner library not loaded (camera scanning may not work)');
         }
     }, 2000);
     
@@ -1770,6 +1813,9 @@ function onScanFailure(error) {
         showNotification('Camera access denied. Please allow camera permissions.', 'error');
     } else if (error && error.name === 'NotFoundError') {
         showNotification('No camera found. Try using manual entry instead.', 'error');
+    } else if (error && error.message && error.message.includes('No MultiFormat Readers')) {
+        // This is a normal error when no barcode is visible, don't show notification
+        console.log('No barcode detected - this is normal when scanning');
     }
 }
 
@@ -2119,6 +2165,132 @@ function processManualBarcode() {
 }
 
 // Auto-scan functions for mobile
+
+function processBarcodePhoto() {
+    const fileInput = document.getElementById('barcodePhotoInput');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showNotification('Please select a photo first', 'error');
+        return;
+    }
+    
+    showNotification('Processing barcode photo...', 'success');
+    
+    // For now, this will show a message to manually enter the barcode
+    // In a real implementation, you'd use a barcode detection library
+    showNotification('Photo scanning requires manual entry. Please copy the barcode data from your phone scanner and paste it in the manual entry box above.', 'info');
+    
+    // Clear the file input
+    fileInput.value = '';
+}
+
+function processRealtimeBarcode() {
+    const barcodeText = document.getElementById('realtimeBarcodeInput').value.trim();
+    
+    if (!barcodeText) {
+        showNotification('Please scan a barcode first', 'error');
+        return;
+    }
+    
+    console.log('Processing real-time barcode:', barcodeText);
+    
+    // Process the barcode data (same logic as manual entry)
+    try {
+        const barcodeParts = barcodeText.split('|');
+        console.log('Real-time barcode parts:', barcodeParts);
+        
+        if (barcodeParts.length >= 4) {
+            const productId = parseInt(barcodeParts[0]);
+            const productName = barcodeParts[1];
+            const productPrice = barcodeParts[2];
+            const productCategory = barcodeParts[3];
+            const productExpiry = barcodeParts[4] || 'NO_EXPIRY';
+            
+            console.log('Parsed real-time barcode data:', {
+                id: productId,
+                name: productName,
+                price: productPrice,
+                category: productCategory,
+                expiry: productExpiry
+            });
+            
+            const product = inventory.find(p => p.id === productId);
+            console.log('Found product in inventory:', product);
+            
+            if (product) {
+                // Check if auto-sale is enabled
+                const autoSaleEnabled = document.getElementById('autoSaleToggle').checked;
+                console.log('Auto-sale enabled:', autoSaleEnabled, 'Stock:', product.quantityStock);
+                
+                if (autoSaleEnabled && product.quantityStock > 0) {
+                    console.log('Processing auto-sale for product:', product.name);
+                    
+                    // Automatically process a quick sale (reduce stock by 1)
+                    const oldStock = product.quantityStock;
+                    product.quantityStock -= 1;
+                    product.dateUpdated = new Date().toISOString();
+                    
+                    // Recalculate totals
+                    product.totalValue = product.unitPrice * product.quantityStock;
+                    product.totalProfit = (product.unitPrice - product.totalCostPerUnit) * product.quantityStock;
+                    
+                    console.log('Stock updated:', oldStock, '->', product.quantityStock);
+                    
+                    saveData();
+                    displayInventory();
+                    updateStats();
+                    checkAlerts();
+                    
+                    const saleValue = product.unitPrice.toFixed(2);
+                    const saleProfit = (product.unitPrice - product.totalCostPerUnit).toFixed(2);
+                    
+                    showNotification(`✅ Auto-sale completed! 1 unit of ${product.name} sold for ${saleValue} CFA (Profit: ${saleProfit} CFA)`, 'success');
+                    
+                    // Clear the input and refocus for next scan
+                    document.getElementById('realtimeBarcodeInput').value = '';
+                    setTimeout(() => {
+                        document.getElementById('realtimeBarcodeInput').focus();
+                    }, 100);
+                    
+                    // Show quick sale summary
+                    setTimeout(() => {
+                        showQuickSaleSummary(product, 1, saleValue, saleProfit);
+                    }, 1000);
+                } else if (autoSaleEnabled && product.quantityStock <= 0) {
+                    showNotification(`❌ ${product.name} is out of stock!`, 'error');
+                    showProductInfoModal(product);
+                } else {
+                    // Auto-sale is disabled, just show product info
+                    showNotification(`📋 Product scanned: ${product.name}`, 'success');
+                    showProductInfoModal(product);
+                }
+            } else {
+                // Show scanned barcode info even if not in current inventory
+                showScannedBarcodeInfo({
+                    id: productId,
+                    name: productName,
+                    unitPrice: productPrice,
+                    category: productCategory,
+                    expiry: productExpiry
+                });
+            }
+        } else {
+            console.log('Invalid real-time barcode format - not enough parts:', barcodeParts);
+            showNotification('Invalid barcode format - expected format: ID|NAME|PRICE|CATEGORY|EXPIRY', 'error');
+        }
+    } catch (error) {
+        console.error('Real-time barcode processing error:', error);
+        showNotification('Error processing barcode data', 'error');
+    }
+}
+
+function focusRealtimeScanner() {
+    const input = document.getElementById('realtimeBarcodeInput');
+    input.focus();
+    input.select();
+    showNotification('Scanner focused! Ready to scan.', 'success');
+}
 
 function enableAutoScan() {
     autoScanEnabled = true;
